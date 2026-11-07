@@ -1,0 +1,6 @@
+/target
+/pkg
+/result
+.direnv
+
+/.pre-commit-config.yaml
