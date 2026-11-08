@@ -11,7 +11,7 @@ pub struct Circle {
 }
 
 impl Circle {
-    pub fn draw(&self, ctx: &CanvasRenderingContext2d) {
+    pub fn render(&self, ctx: &CanvasRenderingContext2d) {
         ctx.set_fill_style_str("white");
         ctx.begin_path();
         ctx.arc(
@@ -25,7 +25,7 @@ impl Circle {
         ctx.fill();
     }
 
-    pub fn simulate(&mut self, delta: f32) {
+    pub fn tick(&mut self, delta: f32) {
         self.pos += self.velocity * delta;
     }
 }
