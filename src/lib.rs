@@ -27,14 +27,14 @@ fn start() -> Result<(), JsValue> {
 
     let game_width = window().inner_width().unwrap().as_f64().unwrap();
     let game_height = window().inner_height().unwrap().as_f64().unwrap();
-    let mut circle = Circle {
+    let mut circles = vec![Circle {
         pos: Vec2 {
             x: game_width as f32 / 2.0,
             y: game_height as f32 / 2.0,
         },
         velocity: Vec2 { x: 200.0, y: 400.0 },
         radius: 100.0,
-    };
+    }];
 
     let mut last_time: f64 = window().performance().unwrap().now();
 
@@ -43,7 +43,6 @@ fn start() -> Result<(), JsValue> {
     animation_frame::run(move |timestamp| {
         let dt = ((timestamp - last_time) / 1000.0) as f32;
         last_time = timestamp;
-        circle.simulate(dt);
         let game_width = window().inner_width().unwrap().as_f64().unwrap();
         let game_height = window().inner_height().unwrap().as_f64().unwrap();
 
@@ -57,26 +56,6 @@ fn start() -> Result<(), JsValue> {
                 y: (game_height - padding) as f32,
             },
         };
-
-        if (circle.pos.x - circle.radius) < game_window.start.x && circle.velocity.x < 0.0 {
-            circle.velocity.x = -circle.velocity.x;
-            circle.pos.x = game_window.start.x + circle.radius;
-        }
-
-        if (circle.pos.y - circle.radius) < game_window.start.y && circle.velocity.y < 0.0 {
-            circle.velocity.y = -circle.velocity.y;
-            circle.pos.y = game_window.start.y + circle.radius;
-        }
-
-        if (circle.pos.x + circle.radius) > game_window.end.x && circle.velocity.x > 0.0 {
-            circle.velocity.x = -circle.velocity.x;
-            circle.pos.x = game_window.end.x - circle.radius;
-        }
-
-        if (circle.pos.y + circle.radius) > game_window.end.y && circle.velocity.y > 0.0 {
-            circle.velocity.y = -circle.velocity.y;
-            circle.pos.y = game_window.end.y - circle.radius;
-        }
 
         let canvas_width = canvas.width();
         let canvas_height = canvas.height();
@@ -97,7 +76,31 @@ fn start() -> Result<(), JsValue> {
             game_width - 2.0 * padding,
             game_height - 2.0 * padding,
         );
-        circle.draw(&ctx);
+
+        for circle in &mut circles {
+            circle.simulate(dt);
+
+            if (circle.pos.x - circle.radius) < game_window.start.x && circle.velocity.x < 0.0 {
+                circle.velocity.x = -circle.velocity.x;
+                circle.pos.x = game_window.start.x + circle.radius;
+            }
+
+            if (circle.pos.y - circle.radius) < game_window.start.y && circle.velocity.y < 0.0 {
+                circle.velocity.y = -circle.velocity.y;
+                circle.pos.y = game_window.start.y + circle.radius;
+            }
+
+            if (circle.pos.x + circle.radius) > game_window.end.x && circle.velocity.x > 0.0 {
+                circle.velocity.x = -circle.velocity.x;
+                circle.pos.x = game_window.end.x - circle.radius;
+            }
+
+            if (circle.pos.y + circle.radius) > game_window.end.y && circle.velocity.y > 0.0 {
+                circle.velocity.y = -circle.velocity.y;
+                circle.pos.y = game_window.end.y - circle.radius;
+            }
+            circle.draw(&ctx);
+        }
         true
     });
     Ok(())
