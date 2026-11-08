@@ -153,26 +153,34 @@ impl Game {
             };
             circle.tick(dt);
 
-            if (circle.pos.x - circle.radius) <= game_window.start.x && circle.velocity.x <= 0.0 {
-                circle.velocity.x = -circle.velocity.x * self.restitution;
+            if (circle.pos.x - circle.radius) < game_window.start.x {
+                if circle.velocity.x < 0.0 {
+                    circle.velocity.x = -circle.velocity.x * self.restitution;
+                }
                 circle.velocity.y = circle.velocity.y * (1.0 - self.friction);
                 circle.pos.x = game_window.start.x + circle.radius;
             }
 
-            if (circle.pos.y - circle.radius) <= game_window.start.y && circle.velocity.y <= 0.0 {
-                circle.velocity.y = -circle.velocity.y * self.restitution;
+            if (circle.pos.y - circle.radius) < game_window.start.y {
+                if circle.velocity.y < 0.0 {
+                    circle.velocity.y = -circle.velocity.y * self.restitution;
+                }
                 circle.velocity.x = circle.velocity.x * (1.0 - self.friction);
                 circle.pos.y = game_window.start.y + circle.radius;
             }
 
-            if (circle.pos.x + circle.radius) >= game_window.end.x && circle.velocity.x >= 0.0 {
-                circle.velocity.x = -circle.velocity.x * self.restitution;
+            if (circle.pos.x + circle.radius) > game_window.end.x {
+                if circle.velocity.x > 0.0 {
+                    circle.velocity.x = -circle.velocity.x * self.restitution;
+                }
                 circle.velocity.y = circle.velocity.y * (1.0 - self.friction);
                 circle.pos.x = game_window.end.x - circle.radius;
             }
 
-            if (circle.pos.y + circle.radius) >= game_window.end.y && circle.velocity.y >= 0.0 {
-                circle.velocity.y = -circle.velocity.y * self.restitution;
+            if (circle.pos.y + circle.radius) > game_window.end.y {
+                if circle.velocity.y >= 0.0 {
+                    circle.velocity.y = -circle.velocity.y * self.restitution;
+                }
                 circle.velocity.x = circle.velocity.x * (1.0 - self.friction);
                 circle.pos.y = game_window.end.y - circle.radius;
             }
