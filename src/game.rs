@@ -130,6 +130,21 @@ impl Game {
         self.ctx
             .fill_text(&format!("FPS: {:.0}", self.fps), 16.0, 56.0)
             .unwrap();
+
+        self.ctx.set_text_align("right");
+        self.ctx.set_font("15px sans-serif");
+        let controls = [
+            "Left click: spawn ball",
+            "Right click: delete ball",
+            "Drag: move ball",
+            "Scroll: resize ball",
+        ];
+        for (index, line) in controls.iter().enumerate() {
+            self.ctx
+                .fill_text(line, game_width - 16.0, 32.0 + index as f64 * 20.0)
+                .unwrap();
+        }
+        self.ctx.set_text_align("left");
     }
 
     pub fn update_fps(&mut self, dt: f32) {
