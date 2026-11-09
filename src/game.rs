@@ -22,6 +22,9 @@ pub struct Game {
     drag: Option<DragState>,
     drag_velocity: Vec2,
     last_drag_target: Option<Vec2>,
+    fps: f32,
+    fps_frames: u32,
+    fps_elapsed: f32,
 }
 
 pub struct GameWindow {
@@ -79,6 +82,9 @@ impl Game {
             drag: None,
             drag_velocity: Vec2 { x: 0.0, y: 0.0 },
             last_drag_target: None,
+            fps: 0.0,
+            fps_frames: 0,
+            fps_elapsed: 0.0,
         }
     }
 
@@ -121,6 +127,24 @@ impl Game {
         self.ctx
             .fill_text(&format!("Balls: {}", self.circles.len()), 16.0, 32.0)
             .unwrap();
+        self.ctx
+            .fill_text(&format!("FPS: {:.0}", self.fps), 16.0, 56.0)
+            .unwrap();
+    }
+
+    pub fn update_fps(&mut self, dt: f32) {
+        if dt <= 0.0 {
+            return;
+        }
+
+        self.fps_frames += 1;
+        self.fps_elapsed += dt;
+
+        if self.fps_elapsed >= 0.5 {
+            self.fps = self.fps_frames as f32 / self.fps_elapsed;
+            self.fps_frames = 0;
+            self.fps_elapsed = 0.0;
+        }
     }
 
     pub fn tick(&mut self, dt: f32) {
