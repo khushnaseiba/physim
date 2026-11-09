@@ -46,14 +46,14 @@ fn start() -> Result<(), JsValue> {
         let x = event.offset_x();
         let y = event.offset_y();
 
-        game.borrow_mut().spawn(Circle {
-            pos: Vec2 {
+        game.borrow_mut().spawn(Circle::new(
+            Vec2 {
                 x: x as f32,
                 y: y as f32,
             },
-            velocity: Vec2 { x: 0.0, y: 500.0 },
-            radius: 40.0,
-        });
+            Vec2 { x: 0.0, y: 500.0 },
+            40.0,
+        ));
     });
 
     canvas.add_event_listener_with_callback("click", callback.as_ref().unchecked_ref())?;

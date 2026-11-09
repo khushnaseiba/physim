@@ -8,6 +8,7 @@ description = "A physics simulation that runs in the browser"
 crate-type = ["cdylib"]
 
 [dependencies]
+js-sys = "0.3"
 wasm-bindgen = "0.2"
 
 [dependencies.web-sys]
