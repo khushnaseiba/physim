@@ -51,7 +51,10 @@ fn start() -> Result<(), JsValue> {
                 x: x as f32,
                 y: y as f32,
             },
-            Vec2 { x: 0.0, y: 500.0 },
+            Vec2 {
+                x: ((js_sys::Math::random() * 200.0) - 100.0) as f32,
+                y: 500.0,
+            },
             40.0,
         ));
     });
