@@ -1,4 +1,7 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use crate::{game::Game, prelude::*};
 
@@ -21,8 +24,9 @@ fn start() -> Result<(), JsValue> {
     let canvas = document.get_element_by_id("canvas").unwrap();
     let canvas: web_sys::HtmlCanvasElement = canvas.dyn_into().unwrap();
 
-    let mut last_time: f64 = window().performance().unwrap().now();
     let window = window();
+    let last_time = Rc::new(Cell::new(window.performance().unwrap().now()));
+    let paused = Rc::new(Cell::new(!document.has_focus().unwrap_or(true)));
 
     let game = Rc::new(RefCell::new(Game::new(
         canvas.clone(),
@@ -34,9 +38,16 @@ fn start() -> Result<(), JsValue> {
 
     {
         let game = Rc::clone(&game);
+        let last_time = Rc::clone(&last_time);
+        let paused = Rc::clone(&paused);
         animation_frame::run(move |timestamp| {
-            let dt = ((timestamp - last_time) / 1000.0) as f32;
-            last_time = timestamp;
+            if paused.get() {
+                last_time.set(timestamp);
+                return true;
+            }
+
+            let dt = ((timestamp - last_time.get()) / 1000.0) as f32;
+            last_time.set(timestamp);
 
             game.borrow_mut().update_drag_velocity(dt);
             for _ in 0..20 {
@@ -47,6 +58,29 @@ fn start() -> Result<(), JsValue> {
 
             true
         });
+    }
+
+    {
+        let game = Rc::clone(&game);
+        let paused = Rc::clone(&paused);
+        let callback = Closure::<dyn FnMut()>::new(move || {
+            paused.set(true);
+            game.borrow_mut().end_drag();
+        });
+        window.add_event_listener_with_callback("blur", callback.as_ref().unchecked_ref())?;
+        callback.forget();
+    }
+
+    {
+        let last_time = Rc::clone(&last_time);
+        let paused = Rc::clone(&paused);
+        let performance = window.performance().unwrap();
+        let callback = Closure::<dyn FnMut()>::new(move || {
+            last_time.set(performance.now());
+            paused.set(false);
+        });
+        window.add_event_listener_with_callback("focus", callback.as_ref().unchecked_ref())?;
+        callback.forget();
     }
 
     {
