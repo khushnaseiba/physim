@@ -20,5 +20,6 @@ features = [
     "HtmlCanvasElement",
     "MouseEvent",
     "Performance",
+    "WheelEvent",
     "Window",
 ]

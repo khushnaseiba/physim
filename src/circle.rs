@@ -32,6 +32,10 @@ impl Circle {
         }
     }
 
+    pub fn contains(&self, point: Vec2) -> bool {
+        (self.pos - point).magsq() <= self.radius * self.radius
+    }
+
     pub fn render(&self, ctx: &CanvasRenderingContext2d) {
         ctx.set_fill_style_str(&self.color);
         ctx.begin_path();
@@ -44,6 +48,21 @@ impl Circle {
         )
         .unwrap();
         ctx.fill();
+    }
+
+    pub fn render_outline(&self, ctx: &CanvasRenderingContext2d) {
+        ctx.set_stroke_style_str("#222222");
+        ctx.set_line_width(3.0);
+        ctx.begin_path();
+        ctx.arc(
+            self.pos.x as f64,
+            self.pos.y as f64,
+            (self.radius + 2.0) as f64,
+            0.0,
+            PI * 2.0,
+        )
+        .unwrap();
+        ctx.stroke();
     }
 
     pub fn tick(&mut self, delta: f32) {

@@ -1,15 +1,19 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{circle::Circle, game::Game, prelude::*, vec2::Vec2};
+use crate::{game::Game, prelude::*};
 
 use wasm_bindgen::prelude::*;
-use web_sys::MouseEvent;
+use web_sys::{MouseEvent, WheelEvent};
 
 mod animation_frame;
 mod circle;
 mod game;
 mod prelude;
 mod vec2;
+
+fn event_position(event: &MouseEvent) -> (f32, f32) {
+    (event.offset_x() as f32, event.offset_y() as f32)
+}
 
 #[wasm_bindgen(start)]
 fn start() -> Result<(), JsValue> {
@@ -18,6 +22,7 @@ fn start() -> Result<(), JsValue> {
     let canvas: web_sys::HtmlCanvasElement = canvas.dyn_into().unwrap();
 
     let mut last_time: f64 = window().performance().unwrap().now();
+    let window = window();
 
     let game = Rc::new(RefCell::new(Game::new(
         canvas.clone(),
@@ -36,31 +41,75 @@ fn start() -> Result<(), JsValue> {
             for _ in 0..20 {
                 game.borrow_mut().tick(dt / 20.0);
             }
+            game.borrow_mut().update_hover();
             game.borrow().render();
 
             true
         });
     }
 
-    let callback = Closure::<dyn FnMut(MouseEvent)>::new(move |event: MouseEvent| {
-        let x = event.offset_x();
-        let y = event.offset_y();
+    {
+        let game = Rc::clone(&game);
+        let callback = Closure::<dyn FnMut(MouseEvent)>::new(move |event: MouseEvent| {
+            if event.button() != 0 {
+                return;
+            }
 
-        game.borrow_mut().spawn(Circle::new(
-            Vec2 {
-                x: x as f32,
-                y: y as f32,
-            },
-            Vec2 {
-                x: ((js_sys::Math::random() * 200.0) - 100.0) as f32,
-                y: 500.0,
-            },
-            40.0,
-        ));
-    });
+            let (x, y) = event_position(&event);
+            let mut game = game.borrow_mut();
+            game.set_mouse_position(x, y);
+            game.start_drag();
+        });
+        canvas.add_event_listener_with_callback("mousedown", callback.as_ref().unchecked_ref())?;
+        callback.forget();
+    }
 
-    canvas.add_event_listener_with_callback("click", callback.as_ref().unchecked_ref())?;
-    callback.forget();
+    {
+        let game = Rc::clone(&game);
+        let callback = Closure::<dyn FnMut(MouseEvent)>::new(move |event: MouseEvent| {
+            let (x, y) = event_position(&event);
+            game.borrow_mut().set_mouse_position(x, y);
+        });
+        window.add_event_listener_with_callback("mousemove", callback.as_ref().unchecked_ref())?;
+        callback.forget();
+    }
+
+    {
+        let game = Rc::clone(&game);
+        let callback = Closure::<dyn FnMut(MouseEvent)>::new(move |event: MouseEvent| {
+            if event.button() == 0 {
+                game.borrow_mut().end_drag();
+            }
+        });
+        window.add_event_listener_with_callback("mouseup", callback.as_ref().unchecked_ref())?;
+        callback.forget();
+    }
+
+    {
+        let game = Rc::clone(&game);
+        let callback = Closure::<dyn FnMut(MouseEvent)>::new(move |event: MouseEvent| {
+            event.prevent_default();
+
+            let (x, y) = event_position(&event);
+            let mut game = game.borrow_mut();
+            game.set_mouse_position(x, y);
+            game.delete_selected();
+        });
+        canvas
+            .add_event_listener_with_callback("contextmenu", callback.as_ref().unchecked_ref())?;
+        callback.forget();
+    }
+
+    {
+        let game = Rc::clone(&game);
+        let callback = Closure::<dyn FnMut(WheelEvent)>::new(move |event: WheelEvent| {
+            event.prevent_default();
+            game.borrow_mut()
+                .resize_selected(-event.delta_y() as f32 * 0.1);
+        });
+        canvas.add_event_listener_with_callback("wheel", callback.as_ref().unchecked_ref())?;
+        callback.forget();
+    }
 
     Ok(())
 }

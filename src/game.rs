@@ -3,6 +3,12 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::{circle::Circle, prelude::*, vec2::Vec2};
 
+#[derive(Copy, Clone)]
+struct DragState {
+    index: usize,
+    offset: Vec2,
+}
+
 pub struct Game {
     pub circles: Vec<Circle>,
     pub canvas: HtmlCanvasElement,
@@ -11,6 +17,9 @@ pub struct Game {
     pub friction: f32,
     pub restitution: f32,
     pub gravity: f32,
+    mouse: Option<Vec2>,
+    selected: Option<usize>,
+    drag: Option<DragState>,
 }
 
 pub struct GameWindow {
@@ -53,6 +62,9 @@ impl Game {
             friction,
             restitution,
             gravity,
+            mouse: None,
+            selected: None,
+            drag: None,
         }
     }
 
@@ -84,6 +96,10 @@ impl Game {
 
         for circle in &self.circles {
             circle.render(&self.ctx);
+        }
+
+        if let Some(circle) = self.selected.and_then(|index| self.circles.get(index)) {
+            circle.render_outline(&self.ctx);
         }
 
         self.ctx.set_fill_style_str("#333333");
@@ -152,7 +168,18 @@ impl Game {
             }
         }
 
-        for circle in &mut self.circles {
+        let drag = self.drag;
+        let mouse = self.mouse;
+
+        for (index, circle) in self.circles.iter_mut().enumerate() {
+            if let (Some(drag), Some(mouse)) = (drag, mouse)
+                && drag.index == index
+            {
+                circle.pos = mouse + drag.offset;
+                circle.velocity = Vec2 { x: 0.0, y: 0.0 };
+                continue;
+            }
+
             circle.velocity += Vec2 {
                 x: 0.0,
                 y: 100.0 * self.gravity * dt,
@@ -195,6 +222,70 @@ impl Game {
 
     pub fn spawn(&mut self, circle: Circle) {
         self.circles.push(circle);
+    }
+
+    fn circle_at(&self, point: Vec2) -> Option<usize> {
+        self.circles
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, circle)| circle.contains(point))
+            .map(|(index, _)| index)
+    }
+
+    pub fn set_mouse_position(&mut self, x: f32, y: f32) {
+        self.mouse = Some(Vec2 { x, y });
+        self.update_hover();
+    }
+
+    pub fn update_hover(&mut self) {
+        if self.drag.is_none() {
+            self.selected = self.mouse.and_then(|point| self.circle_at(point));
+        }
+    }
+
+    pub fn start_drag(&mut self) {
+        let Some(point) = self.mouse else {
+            return;
+        };
+
+        let index = match self.circle_at(point) {
+            Some(index) => index,
+            None => {
+                self.spawn(Circle::new(point, Vec2 { x: 0.0, y: 0.0 }, 40.0));
+                self.circles.len() - 1
+            }
+        };
+
+        self.selected = Some(index);
+        self.drag = Some(DragState {
+            index,
+            offset: self.circles[index].pos - point,
+        });
+    }
+
+    pub fn end_drag(&mut self) {
+        self.drag = None;
+        self.selected = self.mouse.and_then(|point| self.circle_at(point));
+    }
+
+    pub fn delete_selected(&mut self) {
+        let Some(index) = self.selected else {
+            return;
+        };
+
+        self.circles.remove(index);
+        self.drag = None;
+        self.selected = self.mouse.and_then(|point| self.circle_at(point));
+    }
+
+    pub fn resize_selected(&mut self, delta: f32) {
+        let Some(index) = self.selected else {
+            return;
+        };
+
+        let circle = &mut self.circles[index];
+        circle.radius = (circle.radius + delta).clamp(10.0, 300.0);
     }
 }
 
