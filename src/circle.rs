@@ -11,12 +11,15 @@ pub struct Circle {
     pub color: String,
 }
 
-fn random_color() -> String {
-    let hue = (js_sys::Math::random() * 360.0).floor();
-    let saturation = 70.0 + js_sys::Math::random() * 30.0;
-    let lightness = 70.0 + js_sys::Math::random() * 15.0;
+static mut HUE: u16 = 0;
 
-    format!("hsl({hue}, {saturation:.0}%, {lightness:.0}%)")
+fn random_color() -> String {
+    let hue = unsafe { HUE as f64 };
+    unsafe {
+        HUE = (HUE + 2) % 360;
+    }
+
+    format!("hsl({hue}, 70%, 70%)")
 }
 
 impl Circle {
