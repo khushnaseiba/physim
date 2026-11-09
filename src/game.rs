@@ -85,6 +85,12 @@ impl Game {
         for circle in &self.circles {
             circle.render(&self.ctx);
         }
+
+        self.ctx.set_fill_style_str("#333333");
+        self.ctx.set_font("20px sans-serif");
+        self.ctx
+            .fill_text(&format!("Balls: {}", self.circles.len()), 16.0, 32.0)
+            .unwrap();
     }
 
     pub fn tick(&mut self, dt: f32) {
