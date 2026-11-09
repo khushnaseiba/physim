@@ -27,7 +27,13 @@ pub struct GameWindow {
     end: Vec2,
 }
 
-fn resolve_equal_mass_collision(velocity_i: Vec2, velocity_j: Vec2, normal: Vec2) -> (Vec2, Vec2) {
+fn resolve_collision(
+    velocity_i: Vec2,
+    velocity_j: Vec2,
+    mass_i: f32,
+    mass_j: f32,
+    normal: Vec2,
+) -> (Vec2, Vec2) {
     let relative_velocity = velocity_j - velocity_i;
     let velocity_along_normal = relative_velocity.x * normal.x + relative_velocity.y * normal.y;
 
@@ -35,8 +41,12 @@ fn resolve_equal_mass_collision(velocity_i: Vec2, velocity_j: Vec2, normal: Vec2
         return (velocity_i, velocity_j);
     }
 
-    let impulse = normal * velocity_along_normal;
-    (velocity_i + impulse, velocity_j - impulse)
+    // Perfectly elastic impulse, scaled by each circle's inverse mass.
+    let impulse = -2.0 * velocity_along_normal / (1.0 / mass_i + 1.0 / mass_j);
+    (
+        velocity_i - normal * (impulse / mass_i),
+        velocity_j + normal * (impulse / mass_j),
+    )
 }
 
 impl Game {
@@ -144,7 +154,6 @@ impl Game {
                 let dist_sq = itoj.magsq();
                 let radii_sum = radius_i + radius_j;
                 if dist_sq < (radii_sum * radii_sum) {
-                    let avg = (pos_i + pos_j) / 2.0;
                     let dist = dist_sq.sqrt();
                     let itoj_norm = if dist > 0.0 {
                         itoj / dist
@@ -157,11 +166,21 @@ impl Game {
                             Vec2 { x: 1.0, y: 0.0 }
                         }
                     };
-                    self.circles[i].pos = avg + itoj_norm * -radius_i;
-                    self.circles[j].pos = avg + itoj_norm * radius_j;
+
+                    // Mass scales with area, so the impulse and positional
+                    // correction respect each circle's size.
+                    let mass_i = radius_i * radius_i;
+                    let mass_j = radius_j * radius_j;
+                    let inv_mass_i = 1.0 / mass_i;
+                    let inv_mass_j = 1.0 / mass_j;
+                    let inv_mass_sum = inv_mass_i + inv_mass_j;
+                    let overlap = radii_sum - dist;
+
+                    self.circles[i].pos = pos_i - itoj_norm * (overlap * inv_mass_i / inv_mass_sum);
+                    self.circles[j].pos = pos_j + itoj_norm * (overlap * inv_mass_j / inv_mass_sum);
 
                     let (velocity_i, velocity_j) =
-                        resolve_equal_mass_collision(velocity_i, velocity_j, itoj_norm);
+                        resolve_collision(velocity_i, velocity_j, mass_i, mass_j, itoj_norm);
                     self.circles[i].velocity = velocity_i;
                     self.circles[j].velocity = velocity_j;
                 }
@@ -291,14 +310,16 @@ impl Game {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_equal_mass_collision;
+    use super::resolve_collision;
     use crate::vec2::Vec2;
 
     #[test]
     fn head_on_collision_exchanges_normal_velocity() {
-        let (velocity_i, velocity_j) = resolve_equal_mass_collision(
+        let (velocity_i, velocity_j) = resolve_collision(
             Vec2 { x: 1.0, y: 0.0 },
             Vec2 { x: -1.0, y: 0.0 },
+            1.0,
+            1.0,
             Vec2 { x: 1.0, y: 0.0 },
         );
 
@@ -308,13 +329,43 @@ mod tests {
 
     #[test]
     fn separating_circles_do_not_receive_another_impulse() {
-        let (velocity_i, velocity_j) = resolve_equal_mass_collision(
+        let (velocity_i, velocity_j) = resolve_collision(
             Vec2 { x: -1.0, y: 0.0 },
             Vec2 { x: 1.0, y: 0.0 },
+            1.0,
+            1.0,
             Vec2 { x: 1.0, y: 0.0 },
         );
 
         assert!((velocity_i.x + 1.0).abs() < f32::EPSILON);
         assert!((velocity_j.x - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn lighter_circle_bounces_off_a_heavier_one() {
+        let (velocity_i, velocity_j) = resolve_collision(
+            Vec2 { x: 1.0, y: 0.0 },
+            Vec2 { x: 0.0, y: 0.0 },
+            1.0,
+            4.0,
+            Vec2 { x: 1.0, y: 0.0 },
+        );
+
+        assert!((velocity_i.x + 0.6).abs() < 1.0e-5);
+        assert!((velocity_j.x - 0.4).abs() < 1.0e-5);
+    }
+
+    #[test]
+    fn equal_mass_collision_conserves_momentum() {
+        let (velocity_i, velocity_j) = resolve_collision(
+            Vec2 { x: 3.0, y: -1.0 },
+            Vec2 { x: -1.0, y: 2.0 },
+            2.0,
+            2.0,
+            Vec2 { x: 1.0, y: 0.0 },
+        );
+
+        // Momentum along the collision normal is unchanged.
+        assert!((2.0 * velocity_i.x + 2.0 * velocity_j.x - 4.0).abs() < 1.0e-5);
     }
 }
