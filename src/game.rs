@@ -20,6 +20,8 @@ pub struct Game {
     mouse: Option<Vec2>,
     selected: Option<usize>,
     drag: Option<DragState>,
+    drag_velocity: Vec2,
+    last_drag_target: Option<Vec2>,
 }
 
 pub struct GameWindow {
@@ -30,8 +32,8 @@ pub struct GameWindow {
 fn resolve_collision(
     velocity_i: Vec2,
     velocity_j: Vec2,
-    mass_i: f32,
-    mass_j: f32,
+    inv_mass_i: f32,
+    inv_mass_j: f32,
     normal: Vec2,
 ) -> (Vec2, Vec2) {
     let relative_velocity = velocity_j - velocity_i;
@@ -42,10 +44,10 @@ fn resolve_collision(
     }
 
     // Perfectly elastic impulse, scaled by each circle's inverse mass.
-    let impulse = -2.0 * velocity_along_normal / (1.0 / mass_i + 1.0 / mass_j);
+    let impulse = -2.0 * velocity_along_normal / (inv_mass_i + inv_mass_j);
     (
-        velocity_i - normal * (impulse / mass_i),
-        velocity_j + normal * (impulse / mass_j),
+        velocity_i - normal * (impulse * inv_mass_i),
+        velocity_j + normal * (impulse * inv_mass_j),
     )
 }
 
@@ -75,6 +77,8 @@ impl Game {
             mouse: None,
             selected: None,
             drag: None,
+            drag_velocity: Vec2 { x: 0.0, y: 0.0 },
+            last_drag_target: None,
         }
     }
 
@@ -120,6 +124,10 @@ impl Game {
     }
 
     pub fn tick(&mut self, dt: f32) {
+        if dt <= 0.0 {
+            return;
+        }
+
         let window = window();
 
         let game_width = window.inner_width().unwrap().as_f64().unwrap();
@@ -136,16 +144,39 @@ impl Game {
             },
         };
 
+        let drag_index = self.drag.map(|drag| drag.index);
+        let drag_target = self.drag_target();
+        let drag_velocity = self.drag_velocity;
+
+        if let (Some(target), Some(index)) = (drag_target, drag_index)
+            && let Some(circle) = self.circles.get_mut(index)
+        {
+            circle.pos = target;
+            circle.prev_pos = target - drag_velocity * dt;
+        }
+
+        let acceleration = Vec2 {
+            x: 0.0,
+            y: 100.0 * self.gravity,
+        };
+
+        for (index, circle) in self.circles.iter_mut().enumerate() {
+            if drag_index == Some(index) {
+                continue;
+            }
+            circle.integrate(dt, acceleration);
+        }
+
         for i in 0..self.circles.len() {
             for j in 0..i {
-                let (pos_i, pos_j, velocity_i, velocity_j, radius_i, radius_j) = {
+                let (pos_i, prev_i, pos_j, prev_j, radius_i, radius_j) = {
                     let circle_i = &self.circles[i];
                     let circle_j = &self.circles[j];
                     (
                         circle_i.pos,
+                        circle_i.prev_pos,
                         circle_j.pos,
-                        circle_i.velocity,
-                        circle_j.velocity,
+                        circle_j.prev_pos,
                         circle_i.radius,
                         circle_j.radius,
                     )
@@ -153,89 +184,95 @@ impl Game {
                 let itoj = pos_j - pos_i;
                 let dist_sq = itoj.magsq();
                 let radii_sum = radius_i + radius_j;
-                if dist_sq < (radii_sum * radii_sum) {
-                    let dist = dist_sq.sqrt();
-                    let itoj_norm = if dist > 0.0 {
-                        itoj / dist
-                    } else {
-                        let relative_velocity = velocity_j - velocity_i;
-                        let relative_speed = relative_velocity.magsq().sqrt();
-                        if relative_speed > 0.0 {
-                            -relative_velocity / relative_speed
-                        } else {
-                            Vec2 { x: 1.0, y: 0.0 }
-                        }
-                    };
-
-                    // Mass scales with area, so the impulse and positional
-                    // correction respect each circle's size.
-                    let mass_i = radius_i * radius_i;
-                    let mass_j = radius_j * radius_j;
-                    let inv_mass_i = 1.0 / mass_i;
-                    let inv_mass_j = 1.0 / mass_j;
-                    let inv_mass_sum = inv_mass_i + inv_mass_j;
-                    let overlap = radii_sum - dist;
-
-                    self.circles[i].pos = pos_i - itoj_norm * (overlap * inv_mass_i / inv_mass_sum);
-                    self.circles[j].pos = pos_j + itoj_norm * (overlap * inv_mass_j / inv_mass_sum);
-
-                    let (velocity_i, velocity_j) =
-                        resolve_collision(velocity_i, velocity_j, mass_i, mass_j, itoj_norm);
-                    self.circles[i].velocity = velocity_i;
-                    self.circles[j].velocity = velocity_j;
+                if dist_sq >= (radii_sum * radii_sum) {
+                    continue;
                 }
+
+                let dist = dist_sq.sqrt();
+                let itoj_norm = if dist > 0.0 {
+                    itoj / dist
+                } else {
+                    let relative_velocity = (pos_j - prev_j) - (pos_i - prev_i);
+                    let relative_speed = relative_velocity.magsq().sqrt();
+                    if relative_speed > 0.0 {
+                        -relative_velocity / relative_speed
+                    } else {
+                        Vec2 { x: 1.0, y: 0.0 }
+                    }
+                };
+
+                // Mass scales with area, so the impulse and positional
+                // correction respect each circle's size. A dragged circle is
+                // treated as infinitely heavy so it pushes others around.
+                let inv_mass_i = if drag_index == Some(i) {
+                    0.0
+                } else {
+                    1.0 / (radius_i * radius_i)
+                };
+                let inv_mass_j = if drag_index == Some(j) {
+                    0.0
+                } else {
+                    1.0 / (radius_j * radius_j)
+                };
+                let inv_mass_sum = inv_mass_i + inv_mass_j;
+                let overlap = radii_sum - dist;
+
+                let new_pos_i = pos_i - itoj_norm * (overlap * inv_mass_i / inv_mass_sum);
+                let new_pos_j = pos_j + itoj_norm * (overlap * inv_mass_j / inv_mass_sum);
+
+                // Verlet velocities are implicit in the position history.
+                let velocity_i = (pos_i - prev_i) / dt;
+                let velocity_j = (pos_j - prev_j) / dt;
+                let (velocity_i, velocity_j) =
+                    resolve_collision(velocity_i, velocity_j, inv_mass_i, inv_mass_j, itoj_norm);
+
+                self.circles[i].pos = new_pos_i;
+                self.circles[i].prev_pos = new_pos_i - velocity_i * dt;
+                self.circles[j].pos = new_pos_j;
+                self.circles[j].prev_pos = new_pos_j - velocity_j * dt;
             }
         }
 
-        let drag = self.drag;
-        let mouse = self.mouse;
-
         for (index, circle) in self.circles.iter_mut().enumerate() {
-            if let (Some(drag), Some(mouse)) = (drag, mouse)
-                && drag.index == index
-            {
-                circle.pos = mouse + drag.offset;
-                circle.velocity = Vec2 { x: 0.0, y: 0.0 };
+            if drag_index == Some(index) {
                 continue;
             }
 
-            circle.velocity += Vec2 {
-                x: 0.0,
-                y: 100.0 * self.gravity * dt,
-            };
-            circle.tick(dt);
+            let mut velocity = circle.pos - circle.prev_pos;
 
             if (circle.pos.x - circle.radius) < game_window.start.x {
-                if circle.velocity.x < 0.0 {
-                    circle.velocity.x = -circle.velocity.x * self.restitution;
+                if velocity.x < 0.0 {
+                    velocity.x *= -self.restitution;
                 }
-                circle.velocity.y = circle.velocity.y * (1.0 - self.friction);
+                velocity.y *= 1.0 - self.friction;
                 circle.pos.x = game_window.start.x + circle.radius;
             }
 
             if (circle.pos.y - circle.radius) < game_window.start.y {
-                if circle.velocity.y < 0.0 {
-                    circle.velocity.y = -circle.velocity.y * self.restitution;
+                if velocity.y < 0.0 {
+                    velocity.y *= -self.restitution;
                 }
-                circle.velocity.x = circle.velocity.x * (1.0 - self.friction);
+                velocity.x *= 1.0 - self.friction;
                 circle.pos.y = game_window.start.y + circle.radius;
             }
 
             if (circle.pos.x + circle.radius) > game_window.end.x {
-                if circle.velocity.x > 0.0 {
-                    circle.velocity.x = -circle.velocity.x * self.restitution;
+                if velocity.x > 0.0 {
+                    velocity.x *= -self.restitution;
                 }
-                circle.velocity.y = circle.velocity.y * (1.0 - self.friction);
+                velocity.y *= 1.0 - self.friction;
                 circle.pos.x = game_window.end.x - circle.radius;
             }
 
             if (circle.pos.y + circle.radius) > game_window.end.y {
-                if circle.velocity.y >= 0.0 {
-                    circle.velocity.y = -circle.velocity.y * self.restitution;
+                if velocity.y >= 0.0 {
+                    velocity.y *= -self.restitution;
                 }
-                circle.velocity.x = circle.velocity.x * (1.0 - self.friction);
+                velocity.x *= 1.0 - self.friction;
                 circle.pos.y = game_window.end.y - circle.radius;
             }
+
+            circle.prev_pos = circle.pos - velocity;
         }
     }
 
@@ -263,6 +300,28 @@ impl Game {
         }
     }
 
+    fn drag_target(&self) -> Option<Vec2> {
+        let drag = self.drag?;
+        let mouse = self.mouse?;
+        Some(mouse + drag.offset)
+    }
+
+    pub fn update_drag_velocity(&mut self, dt: f32) {
+        let Some(target) = self.drag_target() else {
+            self.drag_velocity = Vec2 { x: 0.0, y: 0.0 };
+            self.last_drag_target = None;
+            return;
+        };
+
+        if let Some(previous) = self.last_drag_target
+            && dt > 0.0
+        {
+            self.drag_velocity = (target - previous) / dt;
+        }
+
+        self.last_drag_target = Some(target);
+    }
+
     pub fn start_drag(&mut self) {
         let Some(point) = self.mouse else {
             return;
@@ -271,7 +330,7 @@ impl Game {
         let index = match self.circle_at(point) {
             Some(index) => index,
             None => {
-                self.spawn(Circle::new(point, Vec2 { x: 0.0, y: 0.0 }, 40.0));
+                self.spawn(Circle::new(point, 40.0));
                 self.circles.len() - 1
             }
         };
@@ -281,10 +340,14 @@ impl Game {
             index,
             offset: self.circles[index].pos - point,
         });
+        self.drag_velocity = Vec2 { x: 0.0, y: 0.0 };
+        self.last_drag_target = Some(self.circles[index].pos);
     }
 
     pub fn end_drag(&mut self) {
         self.drag = None;
+        self.drag_velocity = Vec2 { x: 0.0, y: 0.0 };
+        self.last_drag_target = None;
         self.selected = self.mouse.and_then(|point| self.circle_at(point));
     }
 
@@ -295,6 +358,8 @@ impl Game {
 
         self.circles.remove(index);
         self.drag = None;
+        self.drag_velocity = Vec2 { x: 0.0, y: 0.0 };
+        self.last_drag_target = None;
         self.selected = self.mouse.and_then(|point| self.circle_at(point));
     }
 
@@ -347,7 +412,7 @@ mod tests {
             Vec2 { x: 1.0, y: 0.0 },
             Vec2 { x: 0.0, y: 0.0 },
             1.0,
-            4.0,
+            1.0 / 4.0,
             Vec2 { x: 1.0, y: 0.0 },
         );
 
@@ -356,12 +421,26 @@ mod tests {
     }
 
     #[test]
+    fn infinitely_heavy_circle_pushes_a_stationary_one() {
+        let (velocity_i, velocity_j) = resolve_collision(
+            Vec2 { x: 1.0, y: 0.0 },
+            Vec2 { x: 0.0, y: 0.0 },
+            0.0,
+            1.0,
+            Vec2 { x: 1.0, y: 0.0 },
+        );
+
+        assert!((velocity_i.x - 1.0).abs() < f32::EPSILON);
+        assert!((velocity_j.x - 2.0).abs() < 1.0e-5);
+    }
+
+    #[test]
     fn equal_mass_collision_conserves_momentum() {
         let (velocity_i, velocity_j) = resolve_collision(
             Vec2 { x: 3.0, y: -1.0 },
             Vec2 { x: -1.0, y: 2.0 },
-            2.0,
-            2.0,
+            1.0 / 2.0,
+            1.0 / 2.0,
             Vec2 { x: 1.0, y: 0.0 },
         );
 

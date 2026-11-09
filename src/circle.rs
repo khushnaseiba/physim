@@ -6,7 +6,7 @@ use crate::vec2::Vec2;
 
 pub struct Circle {
     pub pos: Vec2,
-    pub velocity: Vec2,
+    pub prev_pos: Vec2,
     pub radius: f32,
     pub color: String,
 }
@@ -23,10 +23,10 @@ fn random_color() -> String {
 }
 
 impl Circle {
-    pub fn new(pos: Vec2, velocity: Vec2, radius: f32) -> Circle {
+    pub fn new(pos: Vec2, radius: f32) -> Circle {
         Circle {
             pos,
-            velocity,
+            prev_pos: pos,
             radius,
             color: random_color(),
         }
@@ -65,7 +65,9 @@ impl Circle {
         ctx.stroke();
     }
 
-    pub fn tick(&mut self, delta: f32) {
-        self.pos += self.velocity * delta;
+    pub fn integrate(&mut self, dt: f32, acceleration: Vec2) {
+        let velocity = self.pos - self.prev_pos;
+        self.prev_pos = self.pos;
+        self.pos += velocity + acceleration * (dt * dt);
     }
 }

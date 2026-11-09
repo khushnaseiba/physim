@@ -38,6 +38,7 @@ fn start() -> Result<(), JsValue> {
             let dt = ((timestamp - last_time) / 1000.0) as f32;
             last_time = timestamp;
 
+            game.borrow_mut().update_drag_velocity(dt);
             for _ in 0..20 {
                 game.borrow_mut().tick(dt / 20.0);
             }
